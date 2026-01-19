@@ -11,3 +11,7 @@ west update
 west zephyr-export
 
 pip install -r zephyr-rtos\scripts\requirements.txt
+
+cd zephyr-rtos
+git am ..\patch\1_mec5_all.patch
+cd ..
