@@ -1,0 +1,59 @@
+/*
+ * Copyright (c) 2023 Microchip Technology Inc.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+    chosen {
+        zephyr,shell-uart = &uart1;
+    };
+
+        aliases {
+        led0 = &led4;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        led4: led_0 {
+            gpios = <MCHP_GPIO_DECODE_153 GPIO_ACTIVE_HIGH>;
+        };
+    };
+};
+
+
+// &dmac {
+//     status = "okay";
+// };
+
+// Master
+&i3c0 {
+    pinctrl-0 = <&i3c01_sda_host_gpio012 &i3c01_scl_host_gpio013>; // TP257
+	pinctrl-names = "default";
+    status = "okay";
+
+    input-clock-frequency = < DT_FREQ_M(96) >;
+    i3c-scl-hz = < DT_FREQ_M(2) >;
+
+    himax_dev@20000002c400130000 {
+		// compatible = "i3c-device";
+        compatible = "microchip,i3c-fake-target";
+		reg = < 0x20 0x02C4 0x00130000 >;
+		/* Dynamic Address To Be Assigned To The Device */
+		// assigned-address = <0x5C>;
+		// supports-setaasa;
+		status = "okay";
+	};
+};
+
+// Target
+// &i3c1 {
+//     pinctrl-0 = < &i3c00_scl_host_gpio140 &i3c00_sda_host_gpio132>; // TP252
+//     pinctrl-names = "default";
+//     // status = "okay";
+
+//     i3c1-as-tgt-pid = <0xB012 0x3456789A>;
+//     i3c1-as-tgt-static-addr= <0x08>;
+//     i3c1-as-tgt-mrl = <128>;
+//     i3c1-as-tgt-mwl = <128>;
+// };
