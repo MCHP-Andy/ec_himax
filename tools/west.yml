@@ -20,7 +20,12 @@ manifest:
       import:
         name-allowlist:
           - cmsis
-          - hal_microchip
+          # - hal_microchip
+    
+    - name: hal_microchip
+      path: modules/hal/microchip
+      remote: zephyrproject-rtos
+      revision: 9ca1f2320f65ea096f320447bd4beec270652b14
 
   self:
     path: tool
