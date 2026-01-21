@@ -174,7 +174,7 @@ static void i3c_test(void) {
         LOG_INF("Host[%s] ready", host_dev->name);
     }
 
-    const struct i3c_device_id devid = {.pid = 0x02c400130000};
+    const struct i3c_device_id devid = I3C_DEVICE_ID_DT(DT_NODELABEL(himax_dev));// {.pid = 0x02c400130000};
     struct i3c_device_desc *target = NULL;
     target = i3c_device_find(host_dev, &devid);
     LOG_INF("Target found: %p", target);

@@ -35,7 +35,7 @@
     input-clock-frequency = < DT_FREQ_M(96) >;
     i3c-scl-hz = < DT_FREQ_M(2) >;
 
-    himax_dev@20000002c400130000 {
+    himax_dev: himax_dev@20000002c400130000 {
 		// compatible = "i3c-device";
         compatible = "microchip,i3c-fake-target";
 		reg = < 0x20 0x02C4 0x00130000 >;
