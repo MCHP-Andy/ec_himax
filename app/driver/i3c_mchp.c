@@ -2286,6 +2286,117 @@ static int dw_i3c_pinctrl_enable(const struct device *dev, bool enable)
 #endif
 }
 
+/* PCR (Power, Clocks, and Resets) Base Address [1] */
+#define MCHP_PCR_BASE           0x40080100
+
+/* PCR Register Offsets [2] */
+#define PCR_OSC_ID_OFF          0x0C
+#define PCR_SLP_EN4_OFF         0x40
+#define PCR_CLK_REQ4_OFF        0x60
+
+/* ECIA (Interrupt Aggregator) Base Address [1] */
+#define MCHP_ECIA_BASE          0x4000E000
+
+/* GIRQ13 Register Offsets [3] */
+#define GIRQ13_SOURCE_OFF       0x64
+#define GIRQ13_EN_SET_OFF       0x68
+
+/* Bit Definitions */
+/* I3C Host Controller 0 is Bit 25 in PCR Sleep/Clock Regs [4] */
+#define PCR_I3C_HOST_BIT        (1ul << 25)
+
+/* PLL Lock Status is Bit 8 in Oscillator ID Register [5] */
+#define PCR_PLL_LOCK_BIT        (1ul << 8)
+
+/* I3C Host is Bit 8 in GIRQ13 [6] */
+#define GIRQ13_I3C_BIT          (1ul << 8)
+
+/* 
+ * I3C Host Configuration Register Offset 
+ * Source: MEC175x Datasheet, Table 12-5 [2]
+ */
+#define I3C_HOST_CFG_OFF        0x300
+
+/* 
+ * I3C Port Selection Bits (Bits 3:0)
+ * Source: MEC175x Datasheet, Section 12.6.1.174 [3]
+ */
+#define I3C_PORT_SEL_MASK       0x0000000F
+#define I3C_PORT_SEL_POS        0
+
+/* 
+ * Port Selection Values 
+ * Source: MEC175x Datasheet, Table 12-2 [4]
+ * 0000 = I3C00
+ * 0001 = I3C01
+ * 0010 = I3C02
+ */
+#define I3C_PORT_VAL_01         0x1
+
+/* Utility Macros for Register Access */
+#define REG32(addr)             (*(volatile uint32_t *)(addr))
+
+static void mchp_i3c_init(const struct device *dev) {
+	const struct dw_i3c_config *config = dev->config;
+
+    /* -----------------------------------------------------------
+     * 1. Disable Sleep Enable in PCR
+     *    Action: Clear Bit 25 in SLEEP ENABLE 4 REGISTER.
+     *    Effect: Allows I3C Host Controller to request clocks.
+     * ----------------------------------------------------------- */
+    REG32(MCHP_PCR_BASE + PCR_SLP_EN4_OFF) &= ~PCR_I3C_HOST_BIT;
+
+	/* -----------------------------------------------------------
+     * 2. Check Request Clock in PCR
+     *    Action: Poll Bit 25 in CLOCK REQUIRED 4 REGISTER.
+     *    Wait until the hardware confirms the block is requesting clocks.
+     * ----------------------------------------------------------- */
+    while ((REG32(MCHP_PCR_BASE + PCR_CLK_REQ4_OFF) & PCR_I3C_HOST_BIT) == 0) {
+        // Wait for clock request to assert
+    }
+
+    /* -----------------------------------------------------------
+     * 3. Check PLL_LOCK in PCR
+     *    Action: Poll Bit 8 in OSCILLATOR ID REGISTER.
+     *    Wait until the 96MHz PLL is locked. I3C requires PLL for 
+     *    high-speed operation (192MHz derived).
+     * ----------------------------------------------------------- */
+    while ((REG32(MCHP_PCR_BASE + PCR_OSC_ID_OFF) & PCR_PLL_LOCK_BIT) == 0) {
+        // Wait for PLL to lock
+    }
+
+	/* -----------------------------------------------------------
+     * 4. Clear GIRQ(13, 8) and connect to NVIC(181)
+     * ----------------------------------------------------------- */
+    
+    /* A. Clear Pending Interrupts (Write-1-to-Clear)
+     *    Register: GIRQ13 SOURCE REGISTER (Offset 0x64)
+     *    Bit: 8 (I3C Host Controller)
+     */
+    // Source: [9]
+    REG32(MCHP_ECIA_BASE + GIRQ13_SOURCE_OFF) = GIRQ13_I3C_BIT;
+
+    /* B. Enable Interrupt (Connect to NVIC)
+     *    Register: GIRQ13 ENABLE SET REGISTER (Offset 0x68)
+     *    Bit: 8
+     *    
+     *    Explanation: Setting the Enable bit allows the 'Result' bit 
+     *    to assert. For MEC175x, the Result Bit 8 of GIRQ13 is 
+     *    physically wired directly to NVIC input 181.
+     */
+    // Source: [6], [10], [11]
+    REG32(MCHP_ECIA_BASE + GIRQ13_EN_SET_OFF) = GIRQ13_I3C_BIT;
+
+	/* -----------------------------------------------------------
+     * 5. Configure I3C Port Selection to I3C01
+     * ----------------------------------------------------------- */
+	uint32_t val;
+	val = sys_read32(config->regs + I3C_HOST_CFG_OFF);
+	val &= ~I3C_PORT_SEL_MASK;
+	val |= (I3C_PORT_VAL_01 << I3C_PORT_SEL_POS);
+	sys_write32(val, config->regs + I3C_HOST_CFG_OFF);
+}
+
 static int dw_i3c_init(const struct device *dev)
 {
 	const struct dw_i3c_config *config = dev->config;
@@ -2309,6 +2420,8 @@ static int dw_i3c_init(const struct device *dev)
 #endif /* CONFIG_I3C_CONTROLLER */
 	/* reset all */
 	sys_write32(RESET_CTRL_ALL, config->regs + RESET_CTRL);
+
+	mchp_i3c_init(dev);
 
 	/* get DAT, DCT pointer */
 	data->datstartaddr =
