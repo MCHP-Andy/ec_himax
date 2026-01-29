@@ -7,7 +7,6 @@
 
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/i3c.h>
-#include <zephyr/drivers/clock_control.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/sys/util.h>
 #include <assert.h>
@@ -19,7 +18,8 @@
 #define NANO_SEC        1000000000ULL
 #define BYTES_PER_DWORD 4
 
-LOG_MODULE_REGISTER(i3c_dw, CONFIG_I3C_DW_LOG_LEVEL);
+LOG_MODULE_REGISTER(i3c_mchp, LOG_LEVEL_DBG);
+#define CONFIG_I3C_DW_RW_TIMEOUT_MS 100
 
 #define DEVICE_CTRL                0x0
 #define DEV_CTRL_ENABLE            BIT(31)
@@ -361,10 +361,8 @@ struct dw_i3c_xfer {
 
 struct dw_i3c_config {
 	struct i3c_driver_config common;
-	const struct device *clock;
+	uint32_t input_clk_freq;
 
-	/* Clock control subsys related struct */
-	clock_control_subsys_t clock_subsys;
 	uint32_t regs;
 
 	void (*irq_config_func)();
@@ -1439,11 +1437,6 @@ static int dw_i3c_init_scl_timing(const struct device *dev, struct i3c_config_co
 	uint32_t hcnt, lcnt, fmlcnt, fmplcnt, free_cnt;
 #endif /* CONFIG_I3C_CONTROLLER */
 
-	if (clock_control_get_rate(config->clock, config->clock_subsys, &core_rate) != 0) {
-		LOG_ERR("%s: get clock rate failed", dev->name);
-		return -EINVAL;
-	}
-
 #ifdef CONFIG_I3C_CONTROLLER
 
 	__ASSERT((ctrl_cfg != NULL), "Controller configuration should not be NULL");
@@ -1452,6 +1445,8 @@ static int dw_i3c_init_scl_timing(const struct device *dev, struct i3c_config_co
 		LOG_ERR("%s: Open Drain Low Period is out of range", dev->name);
 		return -EINVAL;
 	}
+
+	core_rate = config->input_clk_freq;
 
 	/* I3C_OD */
 	hcnt = DIV_ROUND_UP(ctrl_cfg->scl_od_min.high_ns * (uint64_t)core_rate, I3C_PERIOD_NS) - 1;
@@ -2301,15 +2296,6 @@ static int dw_i3c_init(const struct device *dev)
 	uint32_t queue_capability;
 	uint32_t device_ctrl_ext;
 
-	if (!device_is_ready(config->clock)) {
-		return -ENODEV;
-	}
-
-	ret = clock_control_on(config->clock, config->clock_subsys);
-	if (ret < 0) {
-		return ret;
-	}
-
 #ifdef CONFIG_I3C_USE_IBI
 	k_sem_init(&data->ibi_sts_sem, 0, 1);
 	k_sem_init(&data->sem_hj, 0, 1);
@@ -2515,10 +2501,7 @@ static DEVICE_API(i3c, dw_i3c_api) = {
 	};                                                                                         \
 	static const struct dw_i3c_config dw_i3c_cfg_##n = {                                       \
 		.regs = DT_INST_REG_ADDR(n),                                                       \
-		.clock = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),                                    \
-		.clock_subsys = COND_CODE_1(DT_INST_PHA_HAS_CELL(n, clocks, clkid),                \
-				((clock_control_subsys_t)DT_INST_CLOCKS_CELL(n, clkid)),           \
-				((clock_control_subsys_t)0)),                                      \
+		.input_clk_freq = DT_INST_PROP(n, input_clock_frequency), 								\
 		.irq_config_func = &i3c_dw_irq_config_##n,                                         \
 		IF_ENABLED(CONFIG_I3C_CONTROLLER,                                                  \
 			(.common.dev_list.i3c = dw_i3c_device_array_##n,                           \
@@ -2532,5 +2515,5 @@ static DEVICE_API(i3c, dw_i3c_api) = {
 			      &dw_i3c_cfg_##n, POST_KERNEL, CONFIG_I3C_CONTROLLER_INIT_PRIORITY,   \
 			      &dw_i3c_api);
 
-#define DT_DRV_COMPAT snps_designware_i3c
+#define DT_DRV_COMPAT microchip_mchp_i3c
 DT_INST_FOREACH_STATUS_OKAY(DEFINE_DEVICE_FN);

@@ -23,3 +23,5 @@ target_sources(app PRIVATE src/main.c)
 
 # add_subdirectory(driver)
 add_subdirectory(service)
+
+target_sources(app PRIVATE driver/i3c_mchp.c)
