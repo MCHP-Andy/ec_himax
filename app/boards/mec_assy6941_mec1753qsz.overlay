@@ -9,8 +9,12 @@
         zephyr,shell-uart = &uart1;
     };
 
-        aliases {
+    aliases {
         led0 = &led4;
+    };
+
+    zephyr,user {
+        himax-wk-gpios = <MCHP_GPIO_DECODE_140 GPIO_ACTIVE_HIGH>;
     };
 
     leds {

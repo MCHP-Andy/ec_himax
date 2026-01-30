@@ -17,9 +17,16 @@ typedef enum {
     DIST_ERR  = -1 // Error
 } himax_distance_t;
 
+typedef struct himax_ver_t {
+    uint8_t major;
+    uint8_t minor;
+    uint8_t patch[2];
+    uint8_t build[2];
+} himax_ver_t;
+
 int himax_get_test(void);
 
-int himax_get_version(void);
+int himax_get_version(himax_ver_t *ver);
 
 int himax_set_resolution(himax_resolution_t res);
 

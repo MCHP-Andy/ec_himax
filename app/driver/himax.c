@@ -28,6 +28,7 @@ LOG_MODULE_REGISTER(himax_drv, LOG_LEVEL_INF);
 #define CMD_REBOOT     0x05
 
 static struct i3c_device_desc *target = NULL;
+static const struct gpio_dt_spec wk_gpio = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), himax_wk_gpios);
 
 static int himax_write(uint8_t *data, uint32_t len, bool pec_en, bool hdr_en) {
     int ret = 0;
@@ -140,10 +141,16 @@ int himax_get_test(void) {
     return 0;
 }
 
-int himax_get_version(void) {
+int himax_get_version(himax_ver_t *ver) {
     bool pec_en = false;
     bool hdr_en = false;
     int ret = 0;
+
+    if (ver == NULL) {
+        LOG_ERR("Invalid version structure");
+        return -EINVAL;
+    }
+    
 
     uint8_t tx_data[] = {0x01, 0x01, 0x05, 0x00};
     ret = himax_write(tx_data, sizeof(tx_data), pec_en, hdr_en);
@@ -157,9 +164,16 @@ int himax_get_version(void) {
     if (ret)
         LOG_ERR("himax_read error: %d", ret);
 
-    LOG_INF("Himax readback: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+    LOG_DBG("Himax readback: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
             rx_data[0], rx_data[1], rx_data[2], rx_data[3], rx_data[4],
             rx_data[5], rx_data[6], rx_data[7], rx_data[8], rx_data[9]);
+    
+    ver->major = rx_data[4];
+    ver->minor = rx_data[5];
+    ver->patch[0] = rx_data[6];
+    ver->patch[1] = rx_data[7];
+    ver->build[0] = rx_data[8];
+    ver->build[1] = rx_data[9];
 
     return 0;
 }
@@ -186,7 +200,7 @@ int himax_set_resolution(himax_resolution_t res) {
     uint8_t cmd_buffer[] = {0x01, 0x15, 0x05, 0x01, (uint8_t)res};
 
     /* 1. GPIO High: 喚醒裝置進入 Special Mode */
-    // gpio_pin_set(gpio_dev, gpio_pin, 1);
+    gpio_pin_set_dt(&wk_gpio, 1);
 
     /* 2. Delay 20ms: 等待裝置喚醒 */
     k_sleep(K_MSEC(HIMAX_WAKEUP_DELAY_MS));
@@ -199,10 +213,22 @@ int himax_set_resolution(himax_resolution_t res) {
     }
 
     /* 4. Delay 50ms: 等待 WE2 處理設定 */
+    memset(cmd_buffer, 0, sizeof(cmd_buffer));
     k_sleep(K_MSEC(HIMAX_PROCESS_DELAY_MS));
 
+    ret = himax_read(cmd_buffer, sizeof(cmd_buffer), pec_en, hdr_en);
+    if (ret != 0) {
+        LOG_ERR("Failed to get resolution: %d", ret);
+    }
+    LOG_INF("Himax resolution: %02x %02x %02x %02x %02x", cmd_buffer[0],
+            cmd_buffer[1], cmd_buffer[2], cmd_buffer[3], cmd_buffer[4]);
+    if (cmd_buffer[4] != res) {
+        LOG_WRN("Resolution readback mismatch: expected %d, got %d", res,
+                cmd_buffer[4]);
+    }
+
     /* 5. GPIO Low: 結束操作，回到 Sleep Mode */
-    // gpio_pin_set(gpio_dev, gpio_pin, 0);
+    gpio_pin_set_dt(&wk_gpio, 0);
 
     if (ret == 0) {
         LOG_INF("Resolution set to %s",
@@ -234,9 +260,10 @@ int himax_set_frame_rate(uint8_t fps) {
     uint8_t cmd_buffer[] = {0x01, 0x16, 0x05, 0x01, fps};
 
     /* 1. GPIO High: 喚醒裝置 */
-    // gpio_pin_set(gpio_dev, gpio_pin, 1);
+    gpio_pin_set_dt(&wk_gpio, 1);
 
     /* 2. Delay 20ms */
+    memset(cmd_buffer, 0, sizeof(cmd_buffer));
     k_sleep(K_MSEC(HIMAX_WAKEUP_DELAY_MS));
 
     /* 3. 發送設定命令 */
@@ -248,8 +275,19 @@ int himax_set_frame_rate(uint8_t fps) {
     /* 4. Delay 50ms: 等待 WE2 處理 */
     k_sleep(K_MSEC(HIMAX_PROCESS_DELAY_MS));
 
+    ret = himax_read(cmd_buffer, sizeof(cmd_buffer), pec_en, hdr_en);
+    if (ret != 0) {
+        LOG_ERR("Failed to get frame rate: %d", ret);
+    }
+    LOG_INF("Himax frame rate: %02x %02x %02x %02x %02x", cmd_buffer[0],
+            cmd_buffer[1], cmd_buffer[2], cmd_buffer[3], cmd_buffer[4]);
+    if (cmd_buffer[4] != fps) {
+        LOG_WRN("Frame rate readback mismatch: expected %d, got %d", fps,
+                cmd_buffer[4]);
+    }
+
     /* 5. GPIO Low: 釋放裝置 */
-    // gpio_pin_set(gpio_dev, gpio_pin, 0);
+    gpio_pin_set_dt(&wk_gpio, 0);
 
     if (ret == 0) {
         LOG_INF("Frame Rate set to %d FPS", fps);
@@ -263,7 +301,10 @@ int himax_set_frame_rate(uint8_t fps) {
 #define HIMAX_DELAY_MS 10
 
 /* 定義 I3C Read Metadata 命令 Payload [2] */
-static uint8_t metadata_cmd[] = {0x01, 0x14, 0x05, 0x00};
+static uint8_t metadata_cmd[2][4] = {
+    {0x01, 0x13, 0x05, 0x00},
+    {0x01, 0x14, 0x05, 0x00},
+};
 
 /**
  * 讀取 Metadata 的主要函式
@@ -276,22 +317,31 @@ static int himax_read_metadata(uint8_t *pbuf) {
     uint8_t buf[HIMAX_METADATA_RESP_LEN] = {0};
 
     /* 1. Set GPIO High to wake up WE2 (Enter Special Mode) [1] */
-    // gpio_pin_set(gpio_dev, gpio_pin, 1);
+    gpio_pin_set_dt(&wk_gpio, 1);
 
     /* 等待裝置喚醒，設計文件建議 20ms，此處可依實際情況調整 [3] */
-    k_sleep(K_MSEC(20));
+    k_sleep(K_MSEC(100));
+
+    ret =
+        himax_write(&metadata_cmd[0][0], sizeof(metadata_cmd[0]), pec_en, hdr_en);
+    if (ret != 0) {
+        LOG_ERR("Failed to write metadata command: %d", ret);
+        goto exit_sequence;
+    }
+
+    k_sleep(K_MSEC(50));
 
     /* 2. Send "Read Metadata" Command [2] */
     /* 使用提供的 himax_write API */
     ret =
-        himax_write(metadata_cmd, sizeof(metadata_cmd), pec_en, hdr_en);
+        himax_write(&metadata_cmd[1][0], sizeof(metadata_cmd[1]), pec_en, hdr_en);
     if (ret != 0) {
         LOG_ERR("Failed to write metadata command: %d", ret);
         goto exit_sequence;
     }
 
     /* 3. Delay for WE2 to prepare data [3, 4] */
-    k_sleep(K_MSEC(10));
+    k_sleep(K_MSEC(50));
 
     /* 4. Read Metadata Response [2, 5] */
     /* 使用提供的 himax_read API，讀取 54 bytes */
@@ -307,7 +357,7 @@ static int himax_read_metadata(uint8_t *pbuf) {
 
 exit_sequence:
     /* 5. Set GPIO Low to finish (Return to Sleep Mode) [1] */
-    // gpio_pin_set(gpio_dev, gpio_pin, 0);
+    gpio_pin_set_dt(&wk_gpio, 0);
 
     return ret;
 }
@@ -444,8 +494,10 @@ static int hinax_init(void) {
     target = i3c_device_find(host_dev, &devid);
     LOG_INF("Target found: %p", target);
 
-    // himax_set_resolution(target, HIMAX_RES_QQVGA_162_122);
-    // himax_set_frame_rate(target, 5);
+    gpio_pin_configure_dt(&wk_gpio, GPIO_OUTPUT_INACTIVE);
+
+    // himax_set_resolution(HIMAX_RES_QQVGA_162_122);
+    // himax_set_frame_rate(5);
 
     return 0;
 }
