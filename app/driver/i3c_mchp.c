@@ -1512,15 +1512,17 @@ static int dw_i3c_init_scl_timing(const struct device *dev, struct i3c_config_co
 	}
 #endif /* CONFIG_I3C_CONTROLLER */
 #ifdef CONFIG_I3C_TARGET
-	/* I3C Bus Available Time */
-	scl_timing = DIV_ROUND_UP(I3C_BUS_AVAILABLE_TIME_NS * (uint64_t)core_rate,
-					I3C_PERIOD_NS);
-	sys_write32(BUS_I3C_AVAIL_TIME(scl_timing), config->regs + BUS_FREE_TIMING);
+	if (ctrl_cfg->is_secondary) {
+		/* I3C Bus Available Time */
+		scl_timing = DIV_ROUND_UP(I3C_BUS_AVAILABLE_TIME_NS * (uint64_t)core_rate,
+						I3C_PERIOD_NS);
+		sys_write32(BUS_I3C_AVAIL_TIME(scl_timing), config->regs + BUS_FREE_TIMING);
 
-	/* I3C Bus Idle Time */
-	scl_timing =
-		DIV_ROUND_UP(I3C_BUS_IDLE_TIME_NS * (uint64_t)core_rate, I3C_PERIOD_NS);
-	sys_write32(BUS_I3C_IDLE_TIME(scl_timing), config->regs + BUS_IDLE_TIMING);
+		/* I3C Bus Idle Time */
+		scl_timing =
+			DIV_ROUND_UP(I3C_BUS_IDLE_TIME_NS * (uint64_t)core_rate, I3C_PERIOD_NS);
+		sys_write32(BUS_I3C_IDLE_TIME(scl_timing), config->regs + BUS_IDLE_TIMING);
+	}
 #endif /* CONFIG_I3C_TARGET */
 
 	return 0;
@@ -1632,6 +1634,8 @@ static int set_controller_info(const struct device *dev)
 static void enable_interrupts(const struct device *dev)
 {
 	const struct dw_i3c_config *config = dev->config;
+	struct dw_i3c_data *data = dev->data;
+	struct i3c_config_controller *ctrl_config = &data->common.ctrl_config;
 	uint32_t thld_ctrl, intr_mask;
 
 	config->irq_config_func();
@@ -1647,13 +1651,12 @@ static void enable_interrupts(const struct device *dev)
 	sys_write32(INTR_ALL, config->regs + INTR_STATUS);
 
 	/* Enable interrupts */
-#if defined(CONFIG_I3C_CONTROLLER) && defined(CONFIG_I3C_TARGET)
-	intr_mask = INTR_MASTER_MASK | INTR_SLAVE_MASK;
-#elif defined(CONFIG_I3C_CONTROLLER)
-	intr_mask = INTR_MASTER_MASK;
-#elif defined(CONFIG_I3C_TARGET)
-	intr_mask = INTR_SLAVE_MASK;
-#endif
+	if (ctrl_config->is_secondary) {
+		intr_mask = INTR_SLAVE_MASK;
+	} else {
+		intr_mask = INTR_MASTER_MASK;
+	}
+
 	sys_write32(intr_mask, config->regs + INTR_STATUS_EN);
 	sys_write32(intr_mask, config->regs + INTR_SIGNAL_EN);
 }
@@ -2468,8 +2471,10 @@ static int dw_i3c_init(const struct device *dev)
 			(IS_ENABLED(CONFIG_I3C_CONTROLLER) && !ctrl_config->is_secondary));
 
 	/* disable ibi */
-	sys_write32(IBI_REQ_REJECT_ALL, config->regs + IBI_SIR_REQ_REJECT);
-	sys_write32(IBI_REQ_REJECT_ALL, config->regs + IBI_MR_REQ_REJECT);
+	if (ctrl_config->is_secondary) {
+		sys_write32(IBI_REQ_REJECT_ALL, config->regs + IBI_SIR_REQ_REJECT);
+		sys_write32(IBI_REQ_REJECT_ALL, config->regs + IBI_MR_REQ_REJECT);
+	}
 
 	/* disable hot-join */
 	sys_write32(sys_read32(config->regs + DEVICE_CTRL) | (DEV_CTRL_HOT_JOIN_NACK),
