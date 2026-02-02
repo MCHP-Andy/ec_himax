@@ -7,13 +7,27 @@ description: >
 
 compatible: "microchip,mchp-i3c"
 
-include: [i3c-controller.yaml]
+include:
+  - name: i3c-controller.yaml
+  - name: pinctrl-device.yaml
+  - name: microchip,dmec-ecia-girq.yaml
 
 properties:
   reg:
     required: true
 
   interrupts:
+    required: true
+
+  pcr-scr:
+    type: int
+    required: true
+    description: |
+      I3C Power Clock Reset(PCR) peripheral index and bit position
+
+  port-sel:
+    type: int
+    description: soc block mapping to pin
     required: true
 
   pinctrl-0:
