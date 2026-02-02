@@ -24,7 +24,7 @@
         /delete-node/ i3c@40010800;
 
         i3c0: i3c@40010800 {
-			compatible = "snps,designware-i3c";
+			// compatible = "snps,designware-i3c";
 			// #address-cells = < 0x3 >;
 			// #size-cells = < 0x0 >;
 			// reg = < 0x40010800 0x800 >;
@@ -39,9 +39,9 @@
             #size-cells = <0>;
             reg = <0x40010800 0x800>;
             interrupts = <181 2>;
-            input-clock-frequency = <192000000>;
-            i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <400000>;
+            input-clock-frequency = < DT_FREQ_M(192) >;
+            i3c-scl-hz = <DT_FREQ_K(2000)>;
+            i2c-scl-hz = <DT_FREQ_K(400)>;
 
             pinctrl-0 = <&i3c01_sda_host_gpio012 &i3c01_scl_host_gpio013>; // TP257
 	        pinctrl-names = "default";
