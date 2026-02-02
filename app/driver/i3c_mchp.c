@@ -1447,24 +1447,27 @@ static int dw_i3c_init_scl_timing(const struct device *dev, struct i3c_config_co
 	}
 
 	core_rate = config->input_clk_freq;
+	LOG_DBG("I3C Core clock rate: %u Hz", core_rate);
 
 	/* I3C_OD */
-	hcnt = DIV_ROUND_UP(ctrl_cfg->scl_od_min.high_ns * (uint64_t)core_rate, I3C_PERIOD_NS) - 1;
-	hcnt = CLAMP(hcnt, SCL_I3C_TIMING_CNT_MIN, SCL_I3C_TIMING_CNT_MAX);
-
-	lcnt = DIV_ROUND_UP(ctrl_cfg->scl_od_min.low_ns * (uint64_t)core_rate, I3C_PERIOD_NS);
-	lcnt = CLAMP(lcnt, SCL_I3C_TIMING_CNT_MIN, SCL_I3C_TIMING_CNT_MAX);
-
-	scl_timing = SCL_I3C_TIMING_HCNT(hcnt) | SCL_I3C_TIMING_LCNT(lcnt);
-	sys_write32(scl_timing, config->regs + SCL_I3C_OD_TIMING);
-
-	/* I3C_PP */
-	hcnt = DIV_ROUND_UP(I3C_BUS_THIGH_MAX_NS * (uint64_t)core_rate, I3C_PERIOD_NS) - 1;
+	hcnt = DIV_ROUND_UP(core_rate, data->common.ctrl_config.scl.i3c)/2;
 	hcnt = CLAMP(hcnt, SCL_I3C_TIMING_CNT_MIN, SCL_I3C_TIMING_CNT_MAX);
 
 	lcnt = DIV_ROUND_UP(core_rate, data->common.ctrl_config.scl.i3c) - hcnt;
 	lcnt = CLAMP(lcnt, SCL_I3C_TIMING_CNT_MIN, SCL_I3C_TIMING_CNT_MAX);
 
+	LOG_DBG("OD hcnt: %u lcnt: %u", hcnt, lcnt);
+	scl_timing = SCL_I3C_TIMING_HCNT(hcnt) | SCL_I3C_TIMING_LCNT(lcnt);
+	sys_write32(scl_timing, config->regs + SCL_I3C_OD_TIMING);
+
+	/* I3C_PP */
+	hcnt = DIV_ROUND_UP(core_rate, data->common.ctrl_config.scl.i3c)/2;
+	hcnt = CLAMP(hcnt, SCL_I3C_TIMING_CNT_MIN, SCL_I3C_TIMING_CNT_MAX);
+
+	lcnt = DIV_ROUND_UP(core_rate, data->common.ctrl_config.scl.i3c) - hcnt;
+	lcnt = CLAMP(lcnt, SCL_I3C_TIMING_CNT_MIN, SCL_I3C_TIMING_CNT_MAX);
+
+	LOG_DBG("PP hcnt: %u lcnt: %u", hcnt, lcnt);
 	scl_timing = SCL_I3C_TIMING_HCNT(hcnt) | SCL_I3C_TIMING_LCNT(lcnt);
 	sys_write32(scl_timing, config->regs + SCL_I3C_PP_TIMING);
 
@@ -1492,6 +1495,7 @@ static int dw_i3c_init_scl_timing(const struct device *dev, struct i3c_config_co
 	sys_write32(scl_timing, config->regs + SCL_I2C_FM_TIMING);
 
 	if (data->mode != I3C_BUS_MODE_PURE) {
+		LOG_DBG("Mixed bus detected");
 		/*
 		 * Mixed bus: Set bus free timing to match tLOW of I2C timing. If any i2c devices
 		 * only support fast mode, then it to the tLOW of that, otherwise set to the tLOW
@@ -1504,6 +1508,7 @@ static int dw_i3c_init_scl_timing(const struct device *dev, struct i3c_config_co
 		sys_write32(sys_read32(config->regs + DEVICE_CTRL) | DEV_CTRL_I2C_SLAVE_PRESENT,
 			    config->regs + DEVICE_CTRL);
 	} else {
+		LOG_DBG("Pure I3C bus detected");
 		/* Pure bus: Set bus free timing to t_cas of 38.4ns */
 		free_cnt = DIV_ROUND_UP(I3C_BUS_TCAS_PS * (uint64_t)core_rate, I3C_PERIOD_PS);
 		sys_write32(BUS_I3C_MST_FREE(free_cnt), config->regs + BUS_FREE_TIMING);
