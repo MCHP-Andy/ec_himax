@@ -7,6 +7,7 @@
 
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/i3c.h>
+#include <zephyr/dt-bindings/interrupt-controller/mchp-xec-ecia.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/sys/util.h>
 #include <assert.h>
@@ -336,6 +337,20 @@ LOG_MODULE_REGISTER(i3c_mchp, LOG_LEVEL_DBG);
 #define DW_I3C_MAX_DEVS         32
 #define DW_I3C_MAX_CMD_BUF_SIZE 16
 
+
+// MCHP controller specific structures
+#define HOST_CFG 						0x0
+#define HOST_CFG_STUCK_SDA_CLK_SEL 		BIT(25)
+#define HOST_CFG_STUCK_SDA_EN 			BIT(24)
+#define HOST_CFG_RX_DMA_TERM 			BIT(21)
+#define HOST_CFG_RX_DMA_TIMEOUT_EN 		BIT(20)
+#define HOST_CFG_RX_DMA_BEAT_VALUE(x) 	(((x) << 16) & GENMASK(18, 16))
+#define HOST_CFG_TX_DMA_TERM 			BIT(13)
+#define HOST_CFG_TX_DMA_TIMEOUT_EN 		BIT(12)
+#define HOST_CFG_TX_DMA_BEAT_VALUE(x) 	(((x) << 8) & GENMASK(10, 8))
+#define HOST_CFG_I3C_PORT_MASK 			GENMASK(3, 0)
+#define HOST_CFG_I3C_PORT_SEL(x) 		((x) & HOST_CFG_I3C_PORT_MASK)
+
 /* Snps I3C/I2C Device Private Data */
 struct dw_i3c_i2c_dev_data {
 	/* Device id within the retaining registers. This is set after bus initialization by the
@@ -362,10 +377,15 @@ struct dw_i3c_xfer {
 struct dw_i3c_config {
 	struct i3c_driver_config common;
 	uint32_t input_clk_freq;
+	uint8_t girq_id;
+	uint8_t girq_pos;
+	uint8_t enc_pcr;
 
 	uint32_t regs;
+	uint32_t ctrl_regs;
+	uint32_t port_sel;
 
-	void (*irq_config_func)();
+	void (*irq_config_func)(const struct device *dev);
 
 #if defined(CONFIG_PINCTRL)
 	const struct pinctrl_dev_config *pcfg;
@@ -1405,6 +1425,10 @@ static int i3c_dw_irq(const struct device *dev)
 #endif /* CONFIG_I3C_USE_IBI */
 	}
 #endif /* CONFIG_I3C_TARGET */
+
+	/* clear ECIA GIRQ R/W1C status bit after I3C status cleared */
+	soc_ecia_girq_status_clear(config->girq_id, config->girq_pos);
+
 	return 0;
 }
 
@@ -1643,7 +1667,7 @@ static void enable_interrupts(const struct device *dev)
 	struct i3c_config_controller *ctrl_config = &data->common.ctrl_config;
 	uint32_t thld_ctrl, intr_mask;
 
-	config->irq_config_func();
+	config->irq_config_func(dev);
 
 	thld_ctrl = sys_read32(config->regs + QUEUE_THLD_CTRL);
 	thld_ctrl &= (~QUEUE_THLD_CTRL_RESP_BUF_MASK & ~QUEUE_THLD_CTRL_IBI_STS_MASK);
@@ -2294,123 +2318,13 @@ static int dw_i3c_pinctrl_enable(const struct device *dev, bool enable)
 #endif
 }
 
-/* PCR (Power, Clocks, and Resets) Base Address [1] */
-#define MCHP_PCR_BASE           0x40080100
-
-/* PCR Register Offsets [2] */
-#define PCR_OSC_ID_OFF          0x0C
-#define PCR_SLP_EN4_OFF         0x40
-#define PCR_CLK_REQ4_OFF        0x60
-
-/* ECIA (Interrupt Aggregator) Base Address [1] */
-#define MCHP_ECIA_BASE          0x4000E000
-
-/* GIRQ13 Register Offsets [3] */
-#define GIRQ13_SOURCE_OFF       0x64
-#define GIRQ13_EN_SET_OFF       0x68
-
-/* Bit Definitions */
-/* I3C Host Controller 0 is Bit 25 in PCR Sleep/Clock Regs [4] */
-#define PCR_I3C_HOST_BIT        (1ul << 25)
-
-/* PLL Lock Status is Bit 8 in Oscillator ID Register [5] */
-#define PCR_PLL_LOCK_BIT        (1ul << 8)
-
-/* I3C Host is Bit 8 in GIRQ13 [6] */
-#define GIRQ13_I3C_BIT          (1ul << 8)
-
-/* 
- * I3C Host Configuration Register Offset 
- * Source: MEC175x Datasheet, Table 12-5 [2]
- */
-#define I3C_HOST_CFG_OFF        0x300
-
-/* 
- * I3C Port Selection Bits (Bits 3:0)
- * Source: MEC175x Datasheet, Section 12.6.1.174 [3]
- */
-#define I3C_PORT_SEL_MASK       0x0000000F
-#define I3C_PORT_SEL_POS        0
-
-/* 
- * Port Selection Values 
- * Source: MEC175x Datasheet, Table 12-2 [4]
- * 0000 = I3C00
- * 0001 = I3C01
- * 0010 = I3C02
- */
-#define I3C_PORT_VAL_01         0x1
-
-/* Utility Macros for Register Access */
-#define REG32(addr)             (*(volatile uint32_t *)(addr))
-
-static void mchp_i3c_init(const struct device *dev) {
-	const struct dw_i3c_config *config = dev->config;
-
-    /* -----------------------------------------------------------
-     * 1. Disable Sleep Enable in PCR
-     *    Action: Clear Bit 25 in SLEEP ENABLE 4 REGISTER.
-     *    Effect: Allows I3C Host Controller to request clocks.
-     * ----------------------------------------------------------- */
-    REG32(MCHP_PCR_BASE + PCR_SLP_EN4_OFF) &= ~PCR_I3C_HOST_BIT;
-
-	/* -----------------------------------------------------------
-     * 2. Check Request Clock in PCR
-     *    Action: Poll Bit 25 in CLOCK REQUIRED 4 REGISTER.
-     *    Wait until the hardware confirms the block is requesting clocks.
-     * ----------------------------------------------------------- */
-    while ((REG32(MCHP_PCR_BASE + PCR_CLK_REQ4_OFF) & PCR_I3C_HOST_BIT) == 0) {
-        // Wait for clock request to assert
-    }
-
-    /* -----------------------------------------------------------
-     * 3. Check PLL_LOCK in PCR
-     *    Action: Poll Bit 8 in OSCILLATOR ID REGISTER.
-     *    Wait until the 96MHz PLL is locked. I3C requires PLL for 
-     *    high-speed operation (192MHz derived).
-     * ----------------------------------------------------------- */
-    while ((REG32(MCHP_PCR_BASE + PCR_OSC_ID_OFF) & PCR_PLL_LOCK_BIT) == 0) {
-        // Wait for PLL to lock
-    }
-
-	/* -----------------------------------------------------------
-     * 4. Clear GIRQ(13, 8) and connect to NVIC(181)
-     * ----------------------------------------------------------- */
-    
-    /* A. Clear Pending Interrupts (Write-1-to-Clear)
-     *    Register: GIRQ13 SOURCE REGISTER (Offset 0x64)
-     *    Bit: 8 (I3C Host Controller)
-     */
-    // Source: [9]
-    REG32(MCHP_ECIA_BASE + GIRQ13_SOURCE_OFF) = GIRQ13_I3C_BIT;
-
-    /* B. Enable Interrupt (Connect to NVIC)
-     *    Register: GIRQ13 ENABLE SET REGISTER (Offset 0x68)
-     *    Bit: 8
-     *    
-     *    Explanation: Setting the Enable bit allows the 'Result' bit 
-     *    to assert. For MEC175x, the Result Bit 8 of GIRQ13 is 
-     *    physically wired directly to NVIC input 181.
-     */
-    // Source: [6], [10], [11]
-    REG32(MCHP_ECIA_BASE + GIRQ13_EN_SET_OFF) = GIRQ13_I3C_BIT;
-
-	/* -----------------------------------------------------------
-     * 5. Configure I3C Port Selection to I3C01
-     * ----------------------------------------------------------- */
-	uint32_t val;
-	val = sys_read32(config->regs + I3C_HOST_CFG_OFF);
-	val &= ~I3C_PORT_SEL_MASK;
-	val |= (I3C_PORT_VAL_01 << I3C_PORT_SEL_POS);
-	sys_write32(val, config->regs + I3C_HOST_CFG_OFF);
-}
-
 static int dw_i3c_init(const struct device *dev)
 {
 	const struct dw_i3c_config *config = dev->config;
 	struct dw_i3c_data *data = dev->data;
 	struct i3c_config_controller *ctrl_config = &data->common.ctrl_config;
 	int ret;
+	uint8_t port;
 	uint32_t hw_capabilities;
 	uint32_t queue_capability;
 	uint32_t device_ctrl_ext;
@@ -2429,7 +2343,14 @@ static int dw_i3c_init(const struct device *dev)
 	/* reset all */
 	sys_write32(RESET_CTRL_ALL, config->regs + RESET_CTRL);
 
-	mchp_i3c_init(dev);
+	/* enable pcr */
+	soc_xec_pcr_sleep_en_clear(config->enc_pcr);
+
+	/* select i3c port */
+	port = sys_read32(config->ctrl_regs + HOST_CFG);
+	port &= ~HOST_CFG_I3C_PORT_MASK;
+	port |= HOST_CFG_I3C_PORT_SEL(config->port_sel);
+	sys_write32(port, config->ctrl_regs + HOST_CFG);
 
 	/* get DAT, DCT pointer */
 	data->datstartaddr =
@@ -2592,11 +2513,14 @@ static DEVICE_API(i3c, dw_i3c_api) = {
 };
 
 #define I3C_DW_IRQ_HANDLER(n)                                                                      \
-	static void i3c_dw_irq_config_##n(void)                                                    \
+	static void i3c_dw_irq_config_##n(const struct device *dev)                                                    \
 	{                                                                                          \
+		const struct dw_i3c_config *devcfg = dev->config;                         \
+                                                                                                   \
 		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), i3c_dw_irq,                 \
 			    DEVICE_DT_INST_GET(n), 0);                                             \
 		irq_enable(DT_INST_IRQN(n));                                                       \
+		soc_ecia_girq_ctrl(devcfg->girq_id, devcfg->girq_pos, 1u);                         \
 	}
 
 #if defined(CONFIG_PINCTRL)
@@ -2606,6 +2530,9 @@ static DEVICE_API(i3c, dw_i3c_api) = {
 #define I3C_DW_PINCTRL_DEFINE(n)
 #define I3C_DW_PINCTRL_INIT(n)
 #endif
+
+#define DEV_CFG_GIRQ(inst)     MCHP_XEC_ECIA_GIRQ(DT_INST_PROP_BY_IDX(inst, girqs, 0))
+#define DEV_CFG_GIRQ_POS(inst) MCHP_XEC_ECIA_GIRQ_POS(DT_INST_PROP_BY_IDX(inst, girqs, 0))
 
 #define DEFINE_DEVICE_FN(n)                                                                        \
 	I3C_DW_IRQ_HANDLER(n)                                                                      \
@@ -2624,7 +2551,12 @@ static DEVICE_API(i3c, dw_i3c_api) = {
 	};                                                                                         \
 	static const struct dw_i3c_config dw_i3c_cfg_##n = {                                       \
 		.regs = DT_INST_REG_ADDR(n),                                                       \
+		.ctrl_regs = DT_INST_REG_ADDR_BY_IDX(n, 1),                                        \
 		.input_clk_freq = DT_INST_PROP(n, input_clock_frequency), 								\
+		.girq_id = DEV_CFG_GIRQ(n),                                                        \
+		.girq_pos = DEV_CFG_GIRQ_POS(n),                                                   \
+		.enc_pcr = DT_INST_PROP(n, pcr_scr),                                               \
+		.port_sel = DT_INST_PROP(n, port_sel),                                             \
 		.irq_config_func = &i3c_dw_irq_config_##n,                                         \
 		IF_ENABLED(CONFIG_I3C_CONTROLLER,                                                  \
 			(.common.dev_list.i3c = dw_i3c_device_array_##n,                           \
