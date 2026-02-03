@@ -464,7 +464,7 @@ void himax_fw_update_flow(const struct device *i2c_dev, uint8_t *fw_image, uint3
 static int hinax_init(void) {
     LOG_INF("Himax driver initialized");
 
-    const struct device *const host_dev = DEVICE_DT_GET(DT_NODELABEL(i3c0));
+    const struct device *const host_dev = DEVICE_DT_GET(DT_PARENT(DT_NODELABEL(himax_dev)));
     const struct i3c_device_id devid =
         I3C_DEVICE_ID_DT(DT_NODELABEL(himax_dev)); // {.pid = 0x02c400130000};
     target = i3c_device_find(host_dev, &devid);

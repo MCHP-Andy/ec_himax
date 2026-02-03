@@ -13,6 +13,10 @@
         led0 = &led4;
     };
 
+    zephyr,user {
+        himax-wk-gpios = <MCHP_GPIO_DECODE_140 GPIO_ACTIVE_HIGH>;
+    };
+
     leds {
         compatible = "gpio-leds";
         led4: led_0 {
@@ -68,6 +72,15 @@
 		};
     };
 };
+
+&i3c0 {
+    himax_dev: himax_dev@20000002c400130000 {
+        compatible = "microchip,i3c-fake-target";
+        reg = < 0x20 0x02C4 0x00130000 >;
+        /* Dynamic Address To Be Assigned To The Device */
+        // assigned-address = <0x5C>;
+        // supports-setaasa;
+        status = "okay";
     };
 };
 
