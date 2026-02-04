@@ -10,27 +10,13 @@
     };
 
     aliases {
-        led0 = &led4;
+        led0 = &led2;
         wk-btn = &s2;
     };
 
     zephyr,user {
         himax-wk-gpios = <MCHP_GPIO_DECODE_140 GPIO_ACTIVE_HIGH>;
     };
-
-    leds {
-        compatible = "gpio-leds";
-        led4: led_0 {
-            gpios = <MCHP_GPIO_DECODE_153 GPIO_ACTIVE_HIGH>;
-        };
-    };
-
-    btns {
-		compatible = "gpio-keys";
-		s2: btn_1 {
-			gpios = <MCHP_GPIO_DECODE_141 GPIO_ACTIVE_LOW>;
-		};
-	};
 
     tst_clk_out: tst_clk_out {
         compatible = "vnd,pinctrl-device";
@@ -86,20 +72,6 @@
             status = "disabled";
 		};
     };
-
-    power-states {
-		idle: idle {
-			compatible = "zephyr,power-state";
-			power-state-name = "suspend-to-idle";
-			min-residency-us = <100000>;
-		};
-
-		suspend_to_ram: suspend_to_ram {
-			compatible = "zephyr,power-state";
-			power-state-name = "suspend-to-ram";
-			min-residency-us = <200000>;
-		};
-	};
 };
 
 &i3c0 {
