@@ -23,5 +23,8 @@ manifest:
           - cmsis_6
           - hal_microchip
 
+    - name: app
+      path: modules/app
+
   self:
     path: tool
