@@ -110,3 +110,15 @@
 	pinctrl-0 = < &ict0_tach0_gpio050 >;
 	pinctrl-names = "default";
 };
+
+&adc0 {
+	compatible = "microchip,xec-adc";
+    girqs = <MCHP_XEC_ECIA_GIRQ_ENC(17, 8)>,
+            <MCHP_XEC_ECIA_GIRQ_ENC(17, 9)>;
+    pcr-scr = <MCHP_XEC_SCR_ENCODE(3, 3)>;
+	status = "okay";
+    channels = <16>;
+    
+	pinctrl-0 = < &adc00_gpio200 >;
+	pinctrl-names = "default";
+};
