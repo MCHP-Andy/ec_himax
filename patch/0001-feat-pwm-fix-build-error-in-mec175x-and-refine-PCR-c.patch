@@ -1,0 +1,281 @@
+From ba04e76a3d1ef87ac820f3df60078dfb1e3ddf57 Mon Sep 17 00:00:00 2001
+From: MCHP-Andy <andy.chang@microchip.com>
+Date: Thu, 5 Feb 2026 13:33:52 +0800
+Subject: [PATCH] feat(pwm): fix build error in mec175x and refine PCR config
+ in dts
+
+---
+ drivers/pwm/pwm_mchp_xec.c                | 13 +++++++++----
+ dts/arm/microchip/mec/mec1501hsz.dtsi     | 18 +++++++++---------
+ dts/arm/microchip/mec/mec172x_common.dtsi | 18 +++++++++---------
+ dts/arm/microchip/mec/mec172xnlj.dtsi     |  6 +++---
+ dts/bindings/pwm/microchip,xec-pwm.yaml   |  7 ++++---
+ 5 files changed, 34 insertions(+), 28 deletions(-)
+
+diff --git a/drivers/pwm/pwm_mchp_xec.c b/drivers/pwm/pwm_mchp_xec.c
+index 339ce72ea9..051bc5e972 100644
+--- a/drivers/pwm/pwm_mchp_xec.c
++++ b/drivers/pwm/pwm_mchp_xec.c
+@@ -23,6 +23,10 @@
+ 
+ #include <soc.h>
+ 
++#ifndef SHLU32
++	#define SHLU32(v, n) ((uint32_t)(v) << (n))
++#endif
++
+ LOG_MODULE_REGISTER(pwm_mchp_xec, CONFIG_PWM_LOG_LEVEL);
+ 
+ /* Minimal on/off are 1 & 1 both are incremented, so 4.
+@@ -52,8 +56,7 @@ LOG_MODULE_REGISTER(pwm_mchp_xec, CONFIG_PWM_LOG_LEVEL);
+ 
+ struct pwm_xec_config {
+ 	struct pwm_regs * const regs;
+-	uint8_t pcr_idx;
+-	uint8_t pcr_pos;
++	uint8_t enc_pcr;
+ 	const struct pinctrl_dev_config *pcfg;
+ };
+ 
+@@ -433,14 +436,16 @@ static int pwm_xec_init(const struct device *dev)
+ 		return ret;
+ 	}
+ 
++	// enable pcr
++	soc_xec_pcr_sleep_en_clear(cfg->enc_pcr);
++
+ 	return 0;
+ }
+ 
+ #define XEC_PWM_CONFIG(inst)							\
+ 	static struct pwm_xec_config pwm_xec_config_##inst = {			\
+ 		.regs = (struct pwm_regs * const)DT_INST_REG_ADDR(inst),	\
+-		.pcr_idx = (uint8_t)DT_INST_PROP_BY_IDX(inst, pcrs, 0),		\
+-		.pcr_pos = (uint8_t)DT_INST_PROP_BY_IDX(inst, pcrs, 1),		\
++		.enc_pcr = DT_INST_PROP(inst, pcr_scr),                     \
+ 		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),			\
+ 	};
+ 
+diff --git a/dts/arm/microchip/mec/mec1501hsz.dtsi b/dts/arm/microchip/mec/mec1501hsz.dtsi
+index 5815a8859e..c2a360d2bc 100644
+--- a/dts/arm/microchip/mec/mec1501hsz.dtsi
++++ b/dts/arm/microchip/mec/mec1501hsz.dtsi
+@@ -394,7 +394,7 @@
+ 		pwm0: pwm@40005800 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x40005800 0x20>;
+-			pcrs = <1 4>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 4)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+@@ -402,7 +402,7 @@
+ 		pwm1: pwm@40005810 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x40005810 0x20>;
+-			pcrs = <1 20>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 20)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+@@ -410,7 +410,7 @@
+ 		pwm2: pwm@40005820 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x40005820 0x20>;
+-			pcrs = <1 21>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 21)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+@@ -418,7 +418,7 @@
+ 		pwm3: pwm@40005830 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x40005830 0x20>;
+-			pcrs = <1 22>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 22)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+@@ -426,7 +426,7 @@
+ 		pwm4: pwm@40005840 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x40005840 0x20>;
+-			pcrs = <1 23>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 23)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+@@ -434,7 +434,7 @@
+ 		pwm5: pwm@40005850 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x40005850 0x20>;
+-			pcrs = <1 24>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 24)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+@@ -442,7 +442,7 @@
+ 		pwm6: pwm@40005860 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x40005860 0x20>;
+-			pcrs = <1 25>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 25)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+@@ -450,7 +450,7 @@
+ 		pwm7: pwm@40005870 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x40005870 0x20>;
+-			pcrs = <1 26>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 26)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+@@ -458,7 +458,7 @@
+ 		pwm8: pwm@40005880 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x40005880 0x20>;
+-			pcrs = <1 27>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 27)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+diff --git a/dts/arm/microchip/mec/mec172x_common.dtsi b/dts/arm/microchip/mec/mec172x_common.dtsi
+index ba87bccd83..b656cffae0 100644
+--- a/dts/arm/microchip/mec/mec172x_common.dtsi
++++ b/dts/arm/microchip/mec/mec172x_common.dtsi
+@@ -575,7 +575,7 @@ ps2_0: ps2@40009000 {
+ pwm0: pwm@40005800 {
+ 	compatible = "microchip,xec-pwm";
+ 	reg = <0x40005800 0x20>;
+-	pcrs = <1 4>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 4)>;
+ 	status = "disabled";
+ 	#pwm-cells = <3>;
+ };
+@@ -583,7 +583,7 @@ pwm0: pwm@40005800 {
+ pwm1: pwm@40005810 {
+ 	compatible = "microchip,xec-pwm";
+ 	reg = <0x40005810 0x20>;
+-	pcrs = <1 20>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 20)>;
+ 	status = "disabled";
+ 	#pwm-cells = <3>;
+ };
+@@ -591,7 +591,7 @@ pwm1: pwm@40005810 {
+ pwm2: pwm@40005820 {
+ 	compatible = "microchip,xec-pwm";
+ 	reg = <0x40005820 0x20>;
+-	pcrs = <1 21>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 21)>;
+ 	status = "disabled";
+ 	#pwm-cells = <3>;
+ };
+@@ -599,7 +599,7 @@ pwm2: pwm@40005820 {
+ pwm3: pwm@40005830 {
+ 	compatible = "microchip,xec-pwm";
+ 	reg = <0x40005830 0x20>;
+-	pcrs = <1 22>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 22)>;
+ 	status = "disabled";
+ 	#pwm-cells = <3>;
+ };
+@@ -607,7 +607,7 @@ pwm3: pwm@40005830 {
+ pwm4: pwm@40005840 {
+ 	compatible = "microchip,xec-pwm";
+ 	reg = <0x40005840 0x20>;
+-	pcrs = <1 23>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 23)>;
+ 	status = "disabled";
+ 	#pwm-cells = <3>;
+ };
+@@ -615,7 +615,7 @@ pwm4: pwm@40005840 {
+ pwm5: pwm@40005850 {
+ 	compatible = "microchip,xec-pwm";
+ 	reg = <0x40005850 0x20>;
+-	pcrs = <1 24>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 24)>;
+ 	status = "disabled";
+ 	#pwm-cells = <3>;
+ };
+@@ -623,7 +623,7 @@ pwm5: pwm@40005850 {
+ pwm6: pwm@40005860 {
+ 	compatible = "microchip,xec-pwm";
+ 	reg = <0x40005860 0x20>;
+-	pcrs = <1 25>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 25)>;
+ 	status = "disabled";
+ 	#pwm-cells = <3>;
+ };
+@@ -631,7 +631,7 @@ pwm6: pwm@40005860 {
+ pwm7: pwm@40005870 {
+ 	compatible = "microchip,xec-pwm";
+ 	reg = <0x40005870 0x20>;
+-	pcrs = <1 26>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 26)>;
+ 	status = "disabled";
+ 	#pwm-cells = <3>;
+ };
+@@ -639,7 +639,7 @@ pwm7: pwm@40005870 {
+ pwm8: pwm@40005880 {
+ 	compatible = "microchip,xec-pwm";
+ 	reg = <0x40005880 0x20>;
+-	pcrs = <1 27>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 27)>;
+ 	status = "disabled";
+ 	#pwm-cells = <3>;
+ };
+diff --git a/dts/arm/microchip/mec/mec172xnlj.dtsi b/dts/arm/microchip/mec/mec172xnlj.dtsi
+index 95b3b2e47b..4c416b35c1 100644
+--- a/dts/arm/microchip/mec/mec172xnlj.dtsi
++++ b/dts/arm/microchip/mec/mec172xnlj.dtsi
+@@ -70,7 +70,7 @@
+ 		pwm9: pwm@40005890 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x40005890 0x20>;
+-			pcrs = <3 31>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(3, 31)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+@@ -78,7 +78,7 @@
+ 		pwm10: pwm@400058a0 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x400058a0 0x20>;
+-			pcrs = <4 0>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(4, 0)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+@@ -86,7 +86,7 @@
+ 		pwm11: pwm@400058b0 {
+ 			compatible = "microchip,xec-pwm";
+ 			reg = <0x400058b0 0x20>;
+-			pcrs = <4 1>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(4, 1)>;
+ 			status = "disabled";
+ 			#pwm-cells = <3>;
+ 		};
+diff --git a/dts/bindings/pwm/microchip,xec-pwm.yaml b/dts/bindings/pwm/microchip,xec-pwm.yaml
+index 549327f9ff..b9db44b37e 100644
+--- a/dts/bindings/pwm/microchip,xec-pwm.yaml
++++ b/dts/bindings/pwm/microchip,xec-pwm.yaml
+@@ -11,10 +11,11 @@ properties:
+   reg:
+     required: true
+ 
+-  pcrs:
+-    type: array
++  pcr-scr:
++    type: int
+     required: true
+-    description: PWM PCR register index and bit position
++    description: |
++      PWM Power Clock Reset(PCR) peripheral index and bit position
+ 
+   "#pwm-cells":
+     const: 3
+-- 
+2.52.0.windows.1
+
