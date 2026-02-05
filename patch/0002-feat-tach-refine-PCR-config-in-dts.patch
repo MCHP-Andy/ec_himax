@@ -1,0 +1,226 @@
+From 55abfc243b9a4cf405fc7f8d4244537c827d8c34 Mon Sep 17 00:00:00 2001
+From: MCHP-Andy <andy.chang@microchip.com>
+Date: Thu, 5 Feb 2026 17:04:39 +0800
+Subject: [PATCH 2/2] feat(tach): refine PCR config in dts
+
+---
+ .../microchip/mchp_tach_xec/tach_mchp_xec.c   | 38 +++++++------------
+ dts/arm/microchip/mec/mec1501hsz.dtsi         | 16 ++++----
+ dts/arm/microchip/mec/mec172x_common.dtsi     | 16 ++++----
+ dts/bindings/tach/microchip,xec-tach.yaml     | 17 ++++-----
+ 4 files changed, 37 insertions(+), 50 deletions(-)
+
+diff --git a/drivers/sensor/microchip/mchp_tach_xec/tach_mchp_xec.c b/drivers/sensor/microchip/mchp_tach_xec/tach_mchp_xec.c
+index 9647b61efa..6cc87b0438 100644
+--- a/drivers/sensor/microchip/mchp_tach_xec/tach_mchp_xec.c
++++ b/drivers/sensor/microchip/mchp_tach_xec/tach_mchp_xec.c
+@@ -8,30 +8,27 @@
+ #define DT_DRV_COMPAT microchip_xec_tach
+ 
+ #include <errno.h>
+-#include <zephyr/kernel.h>
+-#include <zephyr/device.h>
++#include <soc.h>
+ #include <zephyr/arch/cpu.h>
+-#ifdef CONFIG_SOC_SERIES_MEC172X
+-#include <zephyr/drivers/clock_control/mchp_xec_clock_control.h>
+-#include <zephyr/drivers/interrupt_controller/intc_mchp_xec_ecia.h>
+-#endif
++#include <zephyr/device.h>
+ #include <zephyr/drivers/pinctrl.h>
+ #include <zephyr/drivers/sensor.h>
+-#include <soc.h>
+-#include <zephyr/sys/sys_io.h>
++#include <zephyr/dt-bindings/interrupt-controller/mchp-xec-ecia.h>
++#include <zephyr/kernel.h>
+ #include <zephyr/logging/log.h>
++#include <zephyr/sys/sys_io.h>
+ 
+ #include <zephyr/pm/device.h>
+ #include <zephyr/pm/policy.h>
+ 
++#include <zephyr/logging/log.h>
+ LOG_MODULE_REGISTER(tach_xec, CONFIG_SENSOR_LOG_LEVEL);
+ 
+ struct tach_xec_config {
+ 	struct tach_regs * const regs;
+ 	uint8_t girq;
+ 	uint8_t girq_pos;
+-	uint8_t pcr_idx;
+-	uint8_t pcr_pos;
++	uint8_t enc_pcr;
+ 	const struct pinctrl_dev_config *pcfg;
+ };
+ 
+@@ -112,17 +109,8 @@ static int tach_xec_channel_get(const struct device *dev,
+ static void tach_xec_sleep_clr(const struct device *dev)
+ {
+ 	const struct tach_xec_config * const cfg = dev->config;
+-	struct pcr_regs * const pcr = (struct pcr_regs * const)(
+-		DT_REG_ADDR_BY_IDX(DT_NODELABEL(pcr), 0));
+ 
+-#ifdef CONFIG_SOC_SERIES_MEC172X
+-	pcr->SLP_EN[cfg->pcr_idx] &= ~BIT(cfg->pcr_pos);
+-#else
+-	uintptr_t addr = (uintptr_t)&pcr->SLP_EN0 + (4u * cfg->pcr_idx);
+-	uint32_t pcr_val = sys_read32(addr) & ~BIT(cfg->pcr_pos);
+-
+-	sys_write32(pcr_val, addr);
+-#endif
++	soc_xec_pcr_sleep_en_clear(cfg->enc_pcr);
+ }
+ 
+ #ifdef CONFIG_PM_DEVICE
+@@ -182,13 +170,15 @@ static DEVICE_API(sensor, tach_xec_driver_api) = {
+ 	.channel_get = tach_xec_channel_get,
+ };
+ 
++#define DEV_CFG_GIRQ(inst)     MCHP_XEC_ECIA_GIRQ(DT_INST_PROP_BY_IDX(inst, girqs, 0))
++#define DEV_CFG_GIRQ_POS(inst) MCHP_XEC_ECIA_GIRQ_POS(DT_INST_PROP_BY_IDX(inst, girqs, 0))
++
+ #define XEC_TACH_CONFIG(inst)						\
+ 	static const struct tach_xec_config tach_xec_config_##inst = {	\
+ 		.regs = (struct tach_regs * const)DT_INST_REG_ADDR(inst),	\
+-		.girq = DT_INST_PROP_BY_IDX(inst, girqs, 0),		\
+-		.girq_pos = DT_INST_PROP_BY_IDX(inst, girqs, 1),	\
+-		.pcr_idx = DT_INST_PROP_BY_IDX(inst, pcrs, 0),		\
+-		.pcr_pos = DT_INST_PROP_BY_IDX(inst, pcrs, 1),		\
++		.girq = DEV_CFG_GIRQ(inst),		\
++		.girq_pos = DEV_CFG_GIRQ_POS(inst),	\
++		.enc_pcr = DT_INST_PROP(inst, pcr_scr),             \
+ 		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),		\
+ 	}
+ 
+diff --git a/dts/arm/microchip/mec/mec1501hsz.dtsi b/dts/arm/microchip/mec/mec1501hsz.dtsi
+index c2a360d2bc..78979a55bd 100644
+--- a/dts/arm/microchip/mec/mec1501hsz.dtsi
++++ b/dts/arm/microchip/mec/mec1501hsz.dtsi
+@@ -518,8 +518,8 @@
+ 			compatible = "microchip,xec-tach";
+ 			reg = <0x40006000 0x10>;
+ 			interrupts = <71 4>;
+-			girqs = <17 1>;
+-			pcrs = <1 2>;
++			girqs = <MCHP_XEC_ECIA_GIRQ_ENC(17, 1)>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 2)>;
+ 			status = "disabled";
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
+@@ -529,8 +529,8 @@
+ 			compatible = "microchip,xec-tach";
+ 			reg = <0x40006010 0x10>;
+ 			interrupts = <72 4>;
+-			girqs = <17 2>;
+-			pcrs = <1 11>;
++			girqs = <MCHP_XEC_ECIA_GIRQ_ENC(17, 2)>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 11)>;
+ 			status = "disabled";
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
+@@ -540,8 +540,8 @@
+ 			compatible = "microchip,xec-tach";
+ 			reg = <0x40006020 0x10>;
+ 			interrupts = <73 4>;
+-			girqs = <17 3>;
+-			pcrs = <1 12>;
++			girqs = <MCHP_XEC_ECIA_GIRQ_ENC(17, 3)>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 12)>;
+ 			status = "disabled";
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
+@@ -551,8 +551,8 @@
+ 			compatible = "microchip,xec-tach";
+ 			reg = <0x40006030 0x10>;
+ 			interrupts = <159 4>;
+-			girqs = <17 4>;
+-			pcrs = <1 13>;
++			girqs = <MCHP_XEC_ECIA_GIRQ_ENC(17, 4)>;
++			pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 13)>;
+ 			status = "disabled";
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
+diff --git a/dts/arm/microchip/mec/mec172x_common.dtsi b/dts/arm/microchip/mec/mec172x_common.dtsi
+index b656cffae0..7f0b286c7e 100644
+--- a/dts/arm/microchip/mec/mec172x_common.dtsi
++++ b/dts/arm/microchip/mec/mec172x_common.dtsi
+@@ -648,8 +648,8 @@ tach0: tach@40006000 {
+ 	compatible = "microchip,xec-tach";
+ 	reg = <0x40006000 0x10>;
+ 	interrupts = <71 4>;
+-	girqs = <17 1>;
+-	pcrs = <1 2>;
++	girqs = <MCHP_XEC_ECIA_GIRQ_ENC(17, 1)>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 2)>;
+ 	#address-cells = <1>;
+ 	#size-cells = <0>;
+ 	status = "disabled";
+@@ -659,8 +659,8 @@ tach1: tach@40006010 {
+ 	compatible = "microchip,xec-tach";
+ 	reg = <0x40006010 0x10>;
+ 	interrupts = <72 4>;
+-	girqs = <17 2>;
+-	pcrs = <1 11>;
++	girqs = <MCHP_XEC_ECIA_GIRQ_ENC(17, 2)>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 11)>;
+ 	#address-cells = <1>;
+ 	#size-cells = <0>;
+ 	status = "disabled";
+@@ -670,8 +670,8 @@ tach2: tach@40006020 {
+ 	compatible = "microchip,xec-tach";
+ 	reg = <0x40006020 0x10>;
+ 	interrupts = <73 4>;
+-	girqs = <17 3>;
+-	pcrs = <1 12>;
++	girqs = <MCHP_XEC_ECIA_GIRQ_ENC(17, 3)>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 12)>;
+ 	#address-cells = <1>;
+ 	#size-cells = <0>;
+ 	status = "disabled";
+@@ -681,8 +681,8 @@ tach3: tach@40006030 {
+ 	compatible = "microchip,xec-tach";
+ 	reg = <0x40006030 0x10>;
+ 	interrupts = <159 4>;
+-	girqs = <17 4>;
+-	pcrs = <1 13>;
++	girqs = <MCHP_XEC_ECIA_GIRQ_ENC(17, 4)>;
++	pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 13)>;
+ 	#address-cells = <1>;
+ 	#size-cells = <0>;
+ 	status = "disabled";
+diff --git a/dts/bindings/tach/microchip,xec-tach.yaml b/dts/bindings/tach/microchip,xec-tach.yaml
+index bf9170d204..e98cb47816 100644
+--- a/dts/bindings/tach/microchip,xec-tach.yaml
++++ b/dts/bindings/tach/microchip,xec-tach.yaml
+@@ -5,7 +5,10 @@ description: Microchip XEC tachometer controller
+ 
+ compatible: "microchip,xec-tach"
+ 
+-include: [tach.yaml, pinctrl-device.yaml]
++include:
++  - name: tach.yaml
++  - name: pinctrl-device.yaml
++  - name: microchip,dmec-ecia-girq.yaml
+ 
+ properties:
+   "#address-cells":
+@@ -20,14 +23,8 @@ properties:
+   interrupts:
+     required: true
+ 
+-  girqs:
+-    type: array
++  pcr-scr:
++    type: int
+     required: true
+     description: |
+-      Array of GIRQ and bit position pairs for each interrupt
+-      signal the block generates.
+-
+-  pcrs:
+-    type: array
+-    required: true
+-    description: PCR sleep register index and bit position
++      TACH Power Clock Reset(PCR) peripheral index and bit position
+-- 
+2.52.0.windows.1
+

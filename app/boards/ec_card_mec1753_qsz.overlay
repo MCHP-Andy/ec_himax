@@ -101,3 +101,12 @@
     pinctrl-names = "default";
     status = "okay";
 };
+
+&tach0{
+	compatible = "microchip,xec-tach";
+    girqs = <MCHP_XEC_ECIA_GIRQ_ENC(17, 1)>;
+    pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 2)>;
+	status = "okay";
+	pinctrl-0 = < &ict0_tach0_gpio050 >;
+	pinctrl-names = "default";
+};
