@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/dt-bindings/pwm/pwm.h>
+
 / {
     chosen {
         zephyr,shell-uart = &uart1;
@@ -16,6 +18,13 @@
 
     zephyr,user {
         himax-wk-gpios = <MCHP_GPIO_DECODE_140 GPIO_ACTIVE_HIGH>;
+    };
+
+    pwmfans {
+        compatible = "pwm-leds";
+        fan0: fan0 {
+            pwms = <&pwm1 0 PWM_USEC(40) PWM_POLARITY_NORMAL>;
+        };
     };
 
     tst_clk_out: tst_clk_out {
@@ -83,4 +92,12 @@
         // supports-setaasa;
         status = "okay";
     };
+};
+
+&pwm1 {
+    compatible = "microchip,xec-pwm";
+    pcr-scr = <MCHP_XEC_SCR_ENCODE(1, 20)>;
+    pinctrl-0 = < &pwm1_gpio054 >;
+    pinctrl-names = "default";
+    status = "okay";
 };
