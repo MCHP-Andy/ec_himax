@@ -213,7 +213,19 @@ int himax_set_resolution(himax_resolution_t res) {
     }
 
     /* 4. Delay 50ms: 等待 WE2 處理設定 */
+    memset(cmd_buffer, 0, sizeof(cmd_buffer));
     k_sleep(K_MSEC(HIMAX_PROCESS_DELAY_MS));
+
+    ret = himax_read(cmd_buffer, sizeof(cmd_buffer), pec_en, hdr_en);
+    if (ret != 0) {
+        LOG_ERR("Failed to get resolution: %d", ret);
+    }
+    LOG_INF("Himax resolution: %02x %02x %02x %02x %02x", cmd_buffer[0],
+            cmd_buffer[1], cmd_buffer[2], cmd_buffer[3], cmd_buffer[4]);
+    if (cmd_buffer[4] != res) {
+        LOG_WRN("Resolution readback mismatch: expected %d, got %d", res,
+                cmd_buffer[4]);
+    }
 
     /* 5. GPIO Low: 結束操作，回到 Sleep Mode */
     gpio_pin_set_dt(&wk_gpio, 0);
@@ -260,7 +272,19 @@ int himax_set_frame_rate(uint8_t fps) {
     }
 
     /* 4. Delay 50ms: 等待 WE2 處理 */
+    memset(cmd_buffer, 0, sizeof(cmd_buffer));
     k_sleep(K_MSEC(HIMAX_PROCESS_DELAY_MS));
+
+    ret = himax_read(cmd_buffer, sizeof(cmd_buffer), pec_en, hdr_en);
+    if (ret != 0) {
+        LOG_ERR("Failed to get frame rate: %d", ret);
+    }
+    LOG_INF("Himax frame rate: %02x %02x %02x %02x %02x", cmd_buffer[0],
+            cmd_buffer[1], cmd_buffer[2], cmd_buffer[3], cmd_buffer[4]);
+    if (cmd_buffer[4] != fps) {
+        LOG_WRN("Frame rate readback mismatch: expected %d, got %d", fps,
+                cmd_buffer[4]);
+    }
 
     /* 5. GPIO Low: 釋放裝置 */
     gpio_pin_set_dt(&wk_gpio, 0);
@@ -305,7 +329,9 @@ static int himax_read_metadata(uint8_t *pbuf) {
         goto exit_sequence;
     }
 
+    gpio_pin_set_dt(&wk_gpio, 0);
     k_sleep(K_MSEC(50));
+    gpio_pin_set_dt(&wk_gpio, 1);
 
     /* 2. Send "Read Metadata" Command [2] */
     /* 使用提供的 himax_write API */

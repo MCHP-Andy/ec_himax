@@ -20,8 +20,11 @@ static void service(void) {
     LOG_INF("Himax Version: %d.%d.%d.%d.%d.%d",
             ver.major, ver.minor, ver.patch[0], ver.patch[1], ver.build[0], ver.build[1]);
 
-    // himax_set_resolution(HIMAX_RES_QQVGA_162_122);
-    // himax_set_frame_rate(5);
+    k_sleep(K_MSEC(2000));
+    himax_set_resolution(HIMAX_RES_QQVGA_162_122);
+
+    k_sleep(K_MSEC(2000));
+    himax_set_frame_rate(5);
 
     while (1) {
         int dis = 0;
