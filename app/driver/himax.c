@@ -511,3 +511,59 @@ static int hinax_init(void) {
 }
 
 SYS_INIT(hinax_init, APPLICATION, 0);
+
+
+#ifdef CONFIG_SHELL
+#include <zephyr/shell/shell.h>
+
+static int cmd_himax_version(const struct shell *sh, size_t argc, char **argv) {
+    himax_ver_t ver;
+    int ret;
+
+    ret = himax_get_version(&ver);
+    shell_info(sh, "Himax Version: %d.%d.%d.%d.%d.%d", ver.major, ver.minor,
+               ver.patch[0], ver.patch[1], ver.build[0], ver.build[1]);
+
+    return 0;
+}
+
+static int cmd_himax_wakeup(const struct shell *sh, size_t argc, char **argv) {
+    unsigned long value = 0;
+    int ret;
+
+    value = shell_strtoul(argv[1], 0, &ret);
+
+    ret = gpio_pin_set_dt(&wk_gpio, value);
+    if (ret != 0) {
+        shell_error(sh, "error: %d", ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+static int cmd_himax_meta(const struct shell *sh, size_t argc, char **argv) {
+    int dis = 0;
+
+    dis = himax_get_user_distance(0);
+    if (dis >= 0) {
+        shell_info(sh, "User 0 Distance Category: %d", dis);
+    } else {
+        shell_error(sh, "Failed to get user distance");
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(
+	sub_himax,
+    SHELL_CMD(version, NULL, SHELL_HELP("Get Himax version", ""), cmd_himax_version),
+    SHELL_CMD_ARG(wakeup, NULL, SHELL_HELP("Wake up Himax", "<level 0|1>"), cmd_himax_wakeup, 2, 0),
+    SHELL_CMD(meta, NULL, SHELL_HELP("Get Himax metadata", ""), cmd_himax_meta),
+	SHELL_SUBCMD_SET_END /* Array terminated. */
+);
+
+SHELL_CMD_REGISTER(himax, &sub_himax, "Himax commands", NULL);
+
+#endif
