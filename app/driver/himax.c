@@ -150,7 +150,12 @@ int himax_get_version(himax_ver_t *ver) {
         LOG_ERR("Invalid version structure");
         return -EINVAL;
     }
-    
+
+    /* 1. GPIO High: 喚醒裝置進入 Special Mode */
+    gpio_pin_set_dt(&wk_gpio, 1);
+
+    /* 2. Delay 20ms: 等待裝置喚醒 */
+    k_sleep(K_MSEC(HIMAX_WAKEUP_DELAY_MS));
 
     uint8_t tx_data[] = {0x01, 0x01, 0x05, 0x00};
     ret = himax_write(tx_data, sizeof(tx_data), pec_en, hdr_en);
@@ -168,6 +173,9 @@ int himax_get_version(himax_ver_t *ver) {
             rx_data[0], rx_data[1], rx_data[2], rx_data[3], rx_data[4],
             rx_data[5], rx_data[6], rx_data[7], rx_data[8], rx_data[9]);
     
+    /* 5. GPIO Low: 結束操作，回到 Sleep Mode */
+    gpio_pin_set_dt(&wk_gpio, 0);
+
     ver->major = rx_data[4];
     ver->minor = rx_data[5];
     ver->patch[0] = rx_data[6];
@@ -329,9 +337,7 @@ static int himax_read_metadata(uint8_t *pbuf) {
         goto exit_sequence;
     }
 
-    gpio_pin_set_dt(&wk_gpio, 0);
-    k_sleep(K_MSEC(50));
-    gpio_pin_set_dt(&wk_gpio, 1);
+    k_sleep(K_MSEC(100));
 
     /* 2. Send "Read Metadata" Command [2] */
     /* 使用提供的 himax_write API */
@@ -496,7 +502,7 @@ static int hinax_init(void) {
     target = i3c_device_find(host_dev, &devid);
     LOG_INF("Target found: %p", target);
 
-    gpio_pin_configure_dt(&wk_gpio, GPIO_OUTPUT_INACTIVE);
+    gpio_pin_configure_dt(&wk_gpio, GPIO_OUTPUT_ACTIVE);
 
     // himax_set_resolution(HIMAX_RES_QQVGA_162_122);
     // himax_set_frame_rate(5);
