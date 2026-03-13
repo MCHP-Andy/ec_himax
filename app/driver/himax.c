@@ -152,7 +152,7 @@ int himax_get_version(himax_ver_t *ver) {
     }
 
     /* 1. GPIO High: 喚醒裝置進入 Special Mode */
-    gpio_pin_set_dt(&wk_gpio, 1);
+    // gpio_pin_set_dt(&wk_gpio, 1);
 
     /* 2. Delay 20ms: 等待裝置喚醒 */
     k_sleep(K_MSEC(HIMAX_WAKEUP_DELAY_MS));
@@ -174,7 +174,7 @@ int himax_get_version(himax_ver_t *ver) {
             rx_data[5], rx_data[6], rx_data[7], rx_data[8], rx_data[9]);
     
     /* 5. GPIO Low: 結束操作，回到 Sleep Mode */
-    gpio_pin_set_dt(&wk_gpio, 0);
+    // gpio_pin_set_dt(&wk_gpio, 0);
 
     ver->major = rx_data[4];
     ver->minor = rx_data[5];
@@ -208,7 +208,7 @@ int himax_set_resolution(himax_resolution_t res) {
     uint8_t cmd_buffer[] = {0x01, 0x15, 0x05, 0x01, (uint8_t)res};
 
     /* 1. GPIO High: 喚醒裝置進入 Special Mode */
-    gpio_pin_set_dt(&wk_gpio, 1);
+    // gpio_pin_set_dt(&wk_gpio, 1);
 
     /* 2. Delay 20ms: 等待裝置喚醒 */
     k_sleep(K_MSEC(HIMAX_WAKEUP_DELAY_MS));
@@ -236,7 +236,7 @@ int himax_set_resolution(himax_resolution_t res) {
     }
 
     /* 5. GPIO Low: 結束操作，回到 Sleep Mode */
-    gpio_pin_set_dt(&wk_gpio, 0);
+    // gpio_pin_set_dt(&wk_gpio, 0);
 
     if (ret == 0) {
         LOG_INF("Resolution set to %s",
@@ -268,7 +268,7 @@ int himax_set_frame_rate(uint8_t fps) {
     uint8_t cmd_buffer[] = {0x01, 0x16, 0x05, 0x01, fps};
 
     /* 1. GPIO High: 喚醒裝置 */
-    gpio_pin_set_dt(&wk_gpio, 1);
+    // gpio_pin_set_dt(&wk_gpio, 1);
 
     /* 2. Delay 20ms */
     k_sleep(K_MSEC(HIMAX_WAKEUP_DELAY_MS));
@@ -295,7 +295,7 @@ int himax_set_frame_rate(uint8_t fps) {
     }
 
     /* 5. GPIO Low: 釋放裝置 */
-    gpio_pin_set_dt(&wk_gpio, 0);
+    // gpio_pin_set_dt(&wk_gpio, 0);
 
     if (ret == 0) {
         LOG_INF("Frame Rate set to %d FPS", fps);
@@ -327,6 +327,13 @@ static int himax_read_metadata(uint8_t *pbuf) {
     /* 1. Set GPIO High to wake up WE2 (Enter Special Mode) [1] */
     gpio_pin_set_dt(&wk_gpio, 1);
 
+    k_sleep(K_MSEC(500));
+
+    // TODO: re-assign i3c address
+    i3c_bus_rstdaa_all(target->bus);
+    i3c_bus_setdasa(target, 0x20);
+
+
     /* 等待裝置喚醒，設計文件建議 20ms，此處可依實際情況調整 [3] */
     k_sleep(K_MSEC(100));
 
@@ -334,6 +341,12 @@ static int himax_read_metadata(uint8_t *pbuf) {
         himax_write(&metadata_cmd[0][0], sizeof(metadata_cmd[0]), pec_en, hdr_en);
     if (ret != 0) {
         LOG_ERR("Failed to write metadata command: %d", ret);
+        goto exit_sequence;
+    }
+    k_sleep(K_MSEC(100));
+    ret = himax_read(buf, 5, pec_en, hdr_en);
+    if (ret != 0) {
+        LOG_ERR("Failed to read write metadata command: %d", ret);
         goto exit_sequence;
     }
 
@@ -349,7 +362,7 @@ static int himax_read_metadata(uint8_t *pbuf) {
     }
 
     /* 3. Delay for WE2 to prepare data [3, 4] */
-    k_sleep(K_MSEC(50));
+    k_sleep(K_MSEC(100));
 
     /* 4. Read Metadata Response [2, 5] */
     /* 使用提供的 himax_read API，讀取 54 bytes */
@@ -405,7 +418,7 @@ int himax_get_user_distance(int user_id) {
 
     /* 7. 解析數據 */
     // 計算 Buffer Index: Header Offset (4) + Payload Index
-    uint8_t buffer_idx = user_distance_indices[user_id];
+    uint8_t buffer_idx = user_distance_indices[user_id]+5-1;
 
     // 安全檢查：防止存取越界
     if (buffer_idx >= sizeof(rx_buffer)) {
@@ -494,6 +507,8 @@ void himax_fw_update_flow(const struct device *i2c_dev, uint8_t *fw_image, uint3
 
 #include <zephyr/init.h>
 static int hinax_init(void) {
+    himax_ver_t ver;
+
     LOG_INF("Himax driver initialized");
 
     const struct device *const host_dev = DEVICE_DT_GET(DT_PARENT(DT_NODELABEL(himax_dev)));
@@ -503,6 +518,11 @@ static int hinax_init(void) {
     LOG_INF("Target found: %p", target);
 
     gpio_pin_configure_dt(&wk_gpio, GPIO_OUTPUT_ACTIVE);
+
+    // himax_get_test();
+    himax_get_version(&ver);
+    LOG_INF("Himax Version: %d.%d.%d.%d.%d.%d",
+            ver.major, ver.minor, ver.patch[0], ver.patch[1], ver.build[0], ver.build[1]);
 
     // himax_set_resolution(HIMAX_RES_QQVGA_162_122);
     // himax_set_frame_rate(5);
