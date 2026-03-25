@@ -6,8 +6,8 @@ set ZEPHYR_TOOLCHAIN_VARIANT=zephyr
 
 set WORKSPACE=%cd%
 set ZEPHYR_SDK_INSTALL_DIR=%WORKSPACE%\zephyr-sdk-0.16.8
-set MEC5_SPI_GEN=%WORKSPACE%\tools\mec175x_spi_gen.exe
-set MEC5_SPI_CFG=%WORKSPACE%\app\boards\support\mec175x_spi_cfg.txt
+set MEC5_SPI_GEN=%WORKSPACE%\tools\kf_spi_gen_revb\Kenai_Fjords_spi_gen.exe
+set MEC5_SPI_CFG=%WORKSPACE%\tools\kf_spi_gen_revb\spi_cfg.ini
 set EC_IMG_GEN=%WORKSPACE%\tools\spi_image_trim_out\generating_binaries.py
 
 zephyr_rtos\zephyr-env.cmd
