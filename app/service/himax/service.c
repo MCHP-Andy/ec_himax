@@ -29,7 +29,7 @@ static void service(void) {
     while (1) {
         int dis = 0;
 
-        k_sleep(K_MSEC(2000));
+        k_sleep(K_MSEC(1000));
 
         dis = himax_get_user_distance(0);
         if (dis >= 0) {
@@ -46,6 +46,11 @@ static void service(void) {
         } else {
             LOG_INF("Fan duty cycle set to %d%% based on distance category %d", duty, dis);
         }
+
+        uint8_t ms = dis*300; // Simple mapping: 0->0ms, 1->300ms, 2->600ms, 3->900ms
+        ms = (ms == 0) ? 10 : ms; // Ensure minimum blink interval
+        extern void led_blink_set(uint16_t ms);
+        led_blink_set(ms);
     }
 }
 

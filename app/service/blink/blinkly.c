@@ -23,6 +23,12 @@ LOG_MODULE_REGISTER(blinkly, LOG_LEVEL_INF);
  */
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
+static uint16_t sleep_ms = SLEEP_TIME_MS;
+
+void led_blink_set(uint16_t ms) { 
+	sleep_ms = ms;
+}
+
 static void blinkly(void)
 {
 	int ret;
@@ -45,7 +51,7 @@ static void blinkly(void)
 
 		led_state = !led_state;
 		LOG_DBG("LED state: %s", led_state ? "ON" : "OFF");
-		k_msleep(SLEEP_TIME_MS);
+		k_msleep(sleep_ms);
 	}
 }
 
